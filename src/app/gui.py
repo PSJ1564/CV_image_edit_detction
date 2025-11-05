@@ -3,7 +3,10 @@ from tkinter import filedialog
 from PIL import Image, ImageTk
 import cv2
 import numpy as np
-
+import os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "../../models/final_model.onnx")
+MODEL_PATH = os.path.abspath(MODEL_PATH)
 from src.modules.sift_module import extract_sift_features
 from src.modules.edge_module import extract_edge_features
 from src.modules.ela_module import extract_ela_features
