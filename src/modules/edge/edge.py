@@ -106,7 +106,6 @@ def calculate_hsv_change_mean(hsv_image, canny_map):
 def analyze_edge_continuity(bgr_image):
     """
     A님의 'Edge Continuity' 모듈 최종 통합 함수
-    (이 함수를 다른 파일에서 import하여 사용)
     """
     # Step 1: 전처리
     gray_img, hsv_img = preprocess_images(bgr_image)
@@ -180,3 +179,4 @@ if __name__ == "__main__":
                 print(f"3. HSV Change Mean:   {feature_vector[2]:.4f}")
             else:
                 print("모듈 실행 중 오류가 발생했습니다.")
+
