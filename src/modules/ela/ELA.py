@@ -3,6 +3,7 @@
 ELA Final Integrated Module (모듈형 + Batch 실행형)
 --------------------------------------------------
 - import해서 단일 이미지 feature 추출 가능 (함수형 모듈)
+  -> 입력: NumPy 배열 (bgr_image)
 - python 파일을 직접 실행하면 → 폴더 내 이미지 전체 자동 분석
 - 결과: [ELA_std, high_intensity_ratio, ELA_mean] → CSV 저장
 """
@@ -48,6 +49,7 @@ def _ela_gray_inmem(img_pil: Image.Image, quality: int = 90) -> np.ndarray:
 
     # 메모리상에서 JPEG로 재저장
     buf = io.BytesIO()
+    # JPEG 재압축 시 품질을 float에서 int로 변환
     img_pil.save(buf, format="JPEG", quality=int(quality), optimize=True)
     buf.seek(0)
     reimg = Image.open(buf).convert("RGB")
@@ -71,9 +73,10 @@ def _auto_threshold(ela_u8: np.ndarray,
     - mode="percentile": 상위 백분위수(percentile) 기준
     """
     if mode == "otsu":
+        # Otsu는 8bit 이미지에 적용
         retval, _ = cv2.threshold(ela_u8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         thr = float(retval)
-        # Otsu가 실패할 경우 대비 (거의 단색 이미지)
+        # Otsu가 실패할 경우 대비 (거의 단색 이미지이거나 에러)
         if thr <= 1 or thr >= 254:
             thr = float(np.percentile(ela_u8, percentile))
         return thr
@@ -87,9 +90,9 @@ def _auto_threshold(ela_u8: np.ndarray,
         raise ValueError("high_mode must be one of {'otsu','mean+2std','percentile'}")
 
 # ===========================================
-# 2) 핵심 ELA feature 추출 함수 (팀 모듈에서 import할 부분)
+# 2) 핵심 ELA feature 추출 함수 (넘파이 입력으로 수정됨)
 # ===========================================
-def ela_features_final(image_path: str,
+def ela_features_final(bgr_image: np.ndarray, # <--- **수정: np.ndarray를 입력으로 받습니다.**
                        quality: int = 90,
                        high_mode: HighMode = "otsu",
                        percentile: float = 98.0) -> np.ndarray:
@@ -97,15 +100,19 @@ def ela_features_final(image_path: str,
     ELA 기반 3지표 산출 함수
     ----------------------------
     입력:
-        image_path : 이미지 경로
+        bgr_image : OpenCV로 읽은 BGR 이미지 넘파이 배열
         quality : JPEG 재압축 품질(85~95 권장)
         high_mode : 임계 계산 방식 ('otsu', 'mean+2std', 'percentile')
     반환:
-        np.array([ELA_std, high_intensity_ratio, ELA_mean], dtype=float)
+        np.array([ELA_std, high_ratio, ELA_mean], dtype=float)
     """
 
-    # PIL로 이미지 열기 (PNG, BMP, TIFF 모두 지원)
-    img = Image.open(image_path)
+    # BGR -> RGB 변환 및 PIL 이미지 객체로 변환
+    # ELA 핵심 로직은 PIL을 사용하므로 변환이 필요합니다.
+    rgb_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
+    img = Image.fromarray(rgb_image)
+    
+    # ELA 핵심 계산
     ela_gray = _ela_gray_inmem(img, quality=quality)
 
     # 평균 / 표준편차 계산 (전역 통계)
@@ -117,6 +124,7 @@ def ela_features_final(image_path: str,
     thr = _auto_threshold(ela_u8, mode=high_mode,
                           mean_val=ELA_mean, std_val=ELA_std,
                           percentile=percentile)
+    # 임계값 이상인 픽셀의 비율
     high_ratio = float((ela_u8 >= thr).mean())
 
     return np.array([ELA_std, high_ratio, ELA_mean], dtype=float)
@@ -153,7 +161,7 @@ def main():
     Batch 실행 함수
     -----------------
     1. 같은 폴더의 이미지 파일 자동 탐색
-    2. 각 이미지별 ELA feature 계산
+    2. 각 이미지별 ELA feature 계산 (cv2 로드 후 함수에 np.ndarray 전달)
     3. 결과를 CSV(Ela_features_batch.csv)로 저장
     """
     quality = 90
@@ -172,7 +180,14 @@ def main():
     # 2. 각 이미지별 feature 계산
     for i, p in enumerate(paths, 1):
         try:
-            vals = ela_features_final(str(p), quality=quality,
+            # cv2로 이미지 로드 (bgr_image: np.ndarray)
+            bgr_image = cv2.imread(str(p))
+            if bgr_image is None:
+                print(f"[ERROR] {i}/{total} - {p.name}: Failed to load image.")
+                continue
+                
+            # 수정된 함수에 np.ndarray 전달
+            vals = ela_features_final(bgr_image, quality=quality,
                                       high_mode=high_mode, percentile=percentile)
             rows.append({
                 "file": p.name,
